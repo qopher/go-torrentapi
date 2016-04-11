@@ -41,7 +41,7 @@ func main() {
 	}
 	api, err := torrentapi.Init()
 	if err != nil {
-		fmt.Errorf("Error while querying torrentapi %s", err)
+		fmt.Printf("Error while querying torrentapi %s", err)
 		return
 	}
 	if *tvdbid != "" {
@@ -56,7 +56,7 @@ func main() {
 	api.Ranked(*ranked).Sort(*sort).Format("json_extended").Limit(*limit)
 	results, err := api.Search()
 	if err != nil {
-		fmt.Errorf("Error while querying torrentapi %s", err)
+		fmt.Printf("Error while querying torrentapi %s", err)
 		return
 	}
 	w := new(tabwriter.Writer)
