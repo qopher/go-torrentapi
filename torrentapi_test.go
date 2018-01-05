@@ -39,9 +39,9 @@ func TestTokenIsValid(t *testing.T) {
 	}
 }
 
-func performQueryStringTest(api *API, expected_result string) (result bool, text string) {
-	if !strings.HasSuffix(api.Query, expected_result) {
-		text = fmt.Sprintf("api.Query doesn't ends with requested string: %s, Query: %s", expected_result, api.Query)
+func performQueryStringTest(api *API, expectedResult string) (result bool, text string) {
+	if !strings.HasSuffix(api.Query, expectedResult) {
+		text = fmt.Sprintf("api.Query doesn't ends with requested string: %s, Query: %s", expectedResult, api.Query)
 		return
 	}
 	return true, ""
@@ -73,9 +73,9 @@ func TestAPISearchTVDB(t *testing.T) {
 	}
 }
 
-func TestAPISearchImDB(t *testing.T) {
+func TestAPISearchIMDb(t *testing.T) {
 	api := new(API)
-	api = api.SearchImDB("tt123")
+	api = api.SearchIMDb("tt123")
 	result, text := performQueryStringTest(api, "&search_imdb=tt123")
 	if !result {
 		t.Error(text)
@@ -84,7 +84,7 @@ func TestAPISearchImDB(t *testing.T) {
 
 func TestAPISearchTheMovieDb(t *testing.T) {
 	api := new(API)
-	api = api.SearchTheMovieDB("123")
+	api = api.SearchTheMovieDb("123")
 	result, text := performQueryStringTest(api, "&search_themoviedb=123")
 	if !result {
 		t.Error(text)
