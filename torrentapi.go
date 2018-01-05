@@ -245,6 +245,10 @@ func (api *API) processResponse(apiResponse *APIResponse) (data TorrentResults, 
 		if apiResponse.ErrorCode == 4 {
 			return nil, &expiredTokenError{s: "expired token"}
 		}
+		// No IMDb id found
+		if apiResponse.ErrorCode == 10 {
+			return
+		}
 		// No torrents found
 		if apiResponse.ErrorCode == 20 {
 			return
