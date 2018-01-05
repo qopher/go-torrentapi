@@ -1,9 +1,8 @@
-// torrentapi provides simple and easy Golang interface for RARBG Torrent API v2 (https://torrentapi.org)
+// Package torrentapi provides simple and easy Golang interface for RARBG Torrent API v2 (https://torrentapi.org)
 package torrentapi
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -13,18 +12,18 @@ import (
 )
 
 const (
-	// Supported torrentapi version.
+	// Version of supported torrentapi.
 	Version = 2.0
 
-	// Base API URL.
-	APIURL = "https://torrentapi.org/pubapi_v2.php?"
+	// URL of API.
+	URL = "https://torrentapi.org/pubapi_v2.php?"
 
-	// Token expiration time (default is 15 min, but let's expire it after 890 seconds just to be safe.
+	// TokenExpiration time (default is 15 min, but let's expire it after 890 seconds just to be safe.
 	TokenExpiration = time.Second * 890
 )
 
 // for testing purposes
-var apiurl = APIURL
+var apiurl = URL
 
 // Token keeps token and it's expiration date.
 type Token struct {
@@ -37,14 +36,14 @@ type EpisodeInfo struct {
 	ImDB       string `json:"imdb"`
 	TvDB       string `json:"tvdb"`
 	TvRage     string `json:"tvrage"`
-	TheMovieDB string `json:"themoviedb"`
+	TheMovieDb string `json:"themoviedb"`
 	AirDate    string `json:"airdate"`
 	SeasonNum  string `json:"seasonnum"`
 	EpisodeNum string `json:"epnum"`
 	Title      string `json:"title"`
 }
 
-// TorrentResults keeps information about single torrent returned from TorrentAPI. Some of the fields may be empty.
+// TorrentResult keeps information about single torrent returned from TorrentAPI. Some of the fields may be empty.
 type TorrentResult struct {
 	Title       string      `json:"title"`
 	Filename    string      `json:"filename"`
@@ -105,14 +104,14 @@ func (api *API) SearchTVDB(seriesid string) *API {
 	return api
 }
 
-// SearchIMDB dds ImDB id to search query.
-func (api *API) SearchImDB(movieid string) *API {
+// SearchIMDb adds IMDb id to search query.
+func (api *API) SearchIMDb(movieid string) *API {
 	api.Query += fmt.Sprintf("&search_imdb=%s", movieid)
 	return api
 }
 
-// SearchMovieDB adds TheMovieDB id to search query.
-func (api *API) SearchTheMovieDB(movieid string) *API {
+// SearchTheMovieDb adds TheMovieDb id to search query.
+func (api *API) SearchTheMovieDb(movieid string) *API {
 	api.Query += fmt.Sprintf("&search_themoviedb=%s", movieid)
 	return api
 }
@@ -146,14 +145,14 @@ func (api *API) Ranked(ranked bool) *API {
 }
 
 // MinSeeders specify minimum number of seeders.
-func (api *API) MinSeeders(min_seed int) *API {
-	api.Query += fmt.Sprintf("&min_seeders=%d", min_seed)
+func (api *API) MinSeeders(minSeed int) *API {
+	api.Query += fmt.Sprintf("&min_seeders=%d", minSeed)
 	return api
 }
 
 // MinLeechers specify minimum number of leechers.
-func (api *API) MinLeechers(min_leech int) *API {
-	api.Query += fmt.Sprintf("&min_leechers=%d", min_leech)
+func (api *API) MinLeechers(minLeech int) *API {
+	api.Query += fmt.Sprintf("&min_leechers=%d", minLeech)
 	return api
 }
 
@@ -176,9 +175,9 @@ func getResults(query string) (*APIResponse, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	var api_response APIResponse
-	err = json.NewDecoder(resp.Body).Decode(&api_response)
-	return &api_response, err
+	var apiResponse APIResponse
+	err = json.NewDecoder(resp.Body).Decode(&apiResponse)
+	return &apiResponse, err
 }
 
 var getRes = getResults
@@ -201,11 +200,11 @@ func (api *API) call() (data TorrentResults, err error) {
 		api.Query += fmt.Sprintf("&category=%s", strings.Join(categories, ";"))
 	}
 	query := fmt.Sprintf("%s&token=%s%s", apiurl, api.APIToken.Token, api.Query)
-	api_response, err := getRes(query)
+	apiResponse, err := getRes(query)
 	if err != nil {
 		return
 	}
-	data, err = api.processResponse(api_response)
+	data, err = api.processResponse(apiResponse)
 	if err != nil {
 		if _, ok := err.(*expiredTokenError); ok {
 			// Token expired, renew it and try again
@@ -213,11 +212,11 @@ func (api *API) call() (data TorrentResults, err error) {
 			if err != nil {
 				return
 			}
-			api_response, err = getRes(query)
+			apiResponse, err = getRes(query)
 			if err != nil {
 				return
 			}
-			data, err = api.processResponse(api_response)
+			data, err = api.processResponse(apiResponse)
 		}
 	}
 	api.initQuery()
@@ -233,27 +232,27 @@ func (e expiredTokenError) Error() string {
 }
 
 // Process JSON data received from TorrentAPI
-func (api *API) processResponse(api_response *APIResponse) (data TorrentResults, err error) {
-	if api_response.Torrents != nil {
+func (api *API) processResponse(apiResponse *APIResponse) (data TorrentResults, err error) {
+	if apiResponse.Torrents != nil {
 		// We have valid results
-		err = json.Unmarshal(api_response.Torrents, &data)
+		err = json.Unmarshal(apiResponse.Torrents, &data)
 		if err != nil {
-			err = errors.New(fmt.Sprintf("query: %s, Error: %s", api.Query, err.Error()))
+			err = fmt.Errorf("query: %s, Error: %s", api.Query, err.Error())
 		}
-	} else if api_response.Error != "" {
+	} else if apiResponse.Error != "" {
 		// There was API error
 		// Token expired
-		if api_response.ErrorCode == 4 {
+		if apiResponse.ErrorCode == 4 {
 			return nil, &expiredTokenError{s: "expired token"}
 		}
 		// No torrents found
-		if api_response.ErrorCode == 20 {
+		if apiResponse.ErrorCode == 20 {
 			return
 		}
-		err = errors.New(fmt.Sprintf("query: %s, Error: %s, Error code: %d)", api.Query, api_response.Error, api_response.ErrorCode))
+		err = fmt.Errorf("query: %s, Error: %s, Error code: %d)", api.Query, apiResponse.Error, apiResponse.ErrorCode)
 	} else {
 		// It shouldn't happen
-		err = errors.New(fmt.Sprintf("query: %s, Unknown error: %s", api.Query, err))
+		err = fmt.Errorf("query: %s, Unknown error: %s", api.Query, err)
 	}
 	// Clear Query variable
 	return data, err
