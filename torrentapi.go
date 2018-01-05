@@ -190,6 +190,8 @@ func (api *API) call() (data TorrentResults, err error) {
 		if err != nil {
 			return nil, err
 		}
+		// Wait a seconds to avoid hitting the rate limit
+		time.Sleep(1 * time.Second)
 	}
 	if len(api.categories) > 0 {
 		categories := make([]string, len(api.categories))
