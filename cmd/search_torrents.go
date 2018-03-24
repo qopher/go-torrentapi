@@ -13,7 +13,7 @@ import (
 var (
 	ranked = flag.Bool("ranked", true, "Should results be ranked")
 	tvdbid = flag.String("tvdb", "", "TheTVDB ID to search")
-	imdb   = flag.String("imdb", "", "The IMDB ID to search")
+	imdb   = flag.String("imdb", "", "IMDb ID to search")
 	search = flag.String("search", "", "Search string")
 	sort   = flag.String("sort", "seeders", "Sort order (seeders, leechers, last)")
 	limit  = flag.Int("limit", 25, "Limit of results (25, 50, 100)")
@@ -48,7 +48,7 @@ func main() {
 		api.SearchTVDB(*tvdbid)
 	}
 	if *imdb != "" {
-		api.SearchImDB(*imdb)
+		api.SearchIMDb(*imdb)
 	}
 	if *search != "" {
 		api.SearchString(*search)

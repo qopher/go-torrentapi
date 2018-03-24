@@ -1,4 +1,4 @@
-// torrentapi provides simple and easy Golang interface for RARBG Torrent API v2 (https://torrentapi.org)
+// Package torrentapi provides simple and easy Golang interface for RARBG Torrent API v2 (https://torrentapi.org)
 package torrentapi
 
 import (
@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	// Supported torrentapi version.
+	// Version of supported torrentapi.
 	Version = 2.0
 
 	// DefaultAPIURL is a default value for APIURL option.
@@ -29,9 +29,11 @@ const (
 	DefaultMaxRetries = 10
 )
 
+// Error codes returned by TorrentAPI.
 const (
 	tokenExpiredCode = 4
 	noResultsCode    = 20
+	imdbNotFound     = 10
 )
 
 // Token keeps token and it's expiration date.
@@ -45,7 +47,7 @@ type EpisodeInfo struct {
 	ImDB       string `json:"imdb"`
 	TvDB       string `json:"tvdb"`
 	TvRage     string `json:"tvrage"`
-	TheMovieDB string `json:"themoviedb"`
+	TheMovieDb string `json:"themoviedb"`
 	AirDate    string `json:"airdate"`
 	SeasonNum  string `json:"seasonnum"`
 	EpisodeNum string `json:"epnum"`
@@ -119,14 +121,14 @@ func (a *API) SearchTVDB(seriesid string) *API {
 	return a
 }
 
-// SearchIMDB dds ImDB id to search query.
-func (a *API) SearchImDB(movieid string) *API {
+// SearchIMDb adds IMDb id to search query.
+func (a *API) SearchIMDb(movieid string) *API {
 	a.Query += fmt.Sprintf("&search_imdb=%s", movieid)
 	return a
 }
 
-// SearchMovieDB adds TheMovieDB id to search query.
-func (a *API) SearchTheMovieDB(movieid string) *API {
+// SearchTheMovieDb adds TheMovieDb id to search query.
+func (a *API) SearchTheMovieDb(movieid string) *API {
 	a.Query += fmt.Sprintf("&search_themoviedb=%s", movieid)
 	return a
 }
@@ -160,14 +162,14 @@ func (a *API) Ranked(ranked bool) *API {
 }
 
 // MinSeeders specify minimum number of seeders.
-func (a *API) MinSeeders(min_seed int) *API {
-	a.Query += fmt.Sprintf("&min_seeders=%d", min_seed)
+func (a *API) MinSeeders(minSeed int) *API {
+	a.Query += fmt.Sprintf("&min_seeders=%d", minSeed)
 	return a
 }
 
 // MinLeechers specify minimum number of leechers.
-func (a *API) MinLeechers(min_leech int) *API {
-	a.Query += fmt.Sprintf("&min_leechers=%d", min_leech)
+func (a *API) MinLeechers(minLeech int) *API {
+	a.Query += fmt.Sprintf("&min_leechers=%d", minLeech)
 	return a
 }
 
@@ -182,8 +184,6 @@ func (a *API) Search() (TorrentResults, error) {
 	a.Query += "&mode=search"
 	return a.call()
 }
-
-var httpGet = http.Get
 
 // getResults sends query to TorrentAPI and fetch the response.
 func (a *API) getResults(query string) (*APIResponse, error) {
@@ -256,15 +256,19 @@ func (a *API) processResponse(apiResponse *APIResponse) (TorrentResults, error) 
 		return data, nil
 	} else if apiResponse.Error != "" {
 		// There was API error
+		switch ec := apiResponse.ErrorCode; ec {
 		// Token expired
-		if apiResponse.ErrorCode == tokenExpiredCode {
+		case tokenExpiredCode:
 			return nil, &expiredTokenError{s: "expired token"}
-		}
-		// No torrents found
-		if apiResponse.ErrorCode == noResultsCode {
+		// No IMDb id found
+		case imdbNotFound:
 			return nil, nil
+		// No torrents found
+		case noResultsCode:
+			return nil, nil
+		default:
+			return nil, fmt.Errorf("query: %s, Error: %s, Error code: %d)", a.Query, apiResponse.Error, ec)
 		}
-		return nil, fmt.Errorf("query: %s, Error: %s, Error code: %d)", a.Query, apiResponse.Error, apiResponse.ErrorCode)
 	}
 	// It shouldn't happen
 	return nil, fmt.Errorf("query: %s, Unknown error, got response: %v", a.Query, apiResponse)
