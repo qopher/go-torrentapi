@@ -39,9 +39,9 @@ func main() {
 		flag.PrintDefaults()
 		return
 	}
-	api, err := torrentapi.Init()
+	api, err := torrentapi.New("cli")
 	if err != nil {
-		fmt.Printf("Error while querying torrentapi %s", err)
+		fmt.Printf("Error while starting torrentapi %s", err)
 		return
 	}
 	if *tvdbid != "" {

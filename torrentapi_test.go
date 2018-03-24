@@ -1,12 +1,15 @@
 package torrentapi
 
 import (
-	"errors"
 	"fmt"
-	"reflect"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/kylelemons/godebug/pretty"
 )
 
 func TestTokenIsValid(t *testing.T) {
@@ -154,167 +157,159 @@ func TestAPIRankedMinLeechers(t *testing.T) {
 	}
 }
 
-var nrOfErrors int
+type fakeHandler struct {
+	sync.Mutex
+	cnt      int
+	handlers []http.HandlerFunc
+}
 
-func TestCall(t *testing.T) {
+func (f *fakeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.Lock()
+	defer f.Unlock()
+	fn := f.handlers[f.cnt%len(f.handlers)]
+	f.cnt++
+	fn(w, r)
+}
+
+func (f *fakeHandler) setHandlers(h []http.HandlerFunc) {
+	f.Lock()
+	defer f.Unlock()
+	f.handlers = h
+	f.cnt = 0
+}
+
+func fakeTokenHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, `{"token": "some_token"}`)
+}
+
+func error500(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "some error", http.StatusInternalServerError)
+}
+
+func errorTooMany(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "too many requests error", http.StatusTooManyRequests)
+}
+
+func errorTokenExpired(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, `{
+		"error": "token expired",
+		"error_code": 4
+	}`)
+}
+
+func errorNoResults(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, `{
+		"error": "no results",
+		"error_code": 20
+	}`)
+}
+
+func okResponse(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, `{"torrent_results": [{"title": "Movie"}]}`)
+}
+
+func garbage(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "garbage")
+}
+
+func TestAPI(t *testing.T) {
 	testData := []struct {
-		desc       string
-		api        API
-		getRes     func(string) (*APIResponse, error)
-		renewToken func() (Token, error)
-		want       TorrentResults
-		wantErr    bool
+		desc     string
+		handlers []http.HandlerFunc
+		wantErr  bool
+		want     TorrentResults
 	}{
 		{
-			desc: "Empty torrent response",
-			api:  API{APIToken: Token{Token: "test", Expires: time.Now().Add(time.Second * 100)}},
-			getRes: func(string) (*APIResponse, error) {
-				return &APIResponse{Torrents: []byte("[]")}, nil
-			},
-			renewToken: func() (Token, error) {
-				return Token{}, nil
-			},
-			want:    TorrentResults{},
-			wantErr: false,
+			desc:     "error - garbage data",
+			handlers: []http.HandlerFunc{garbage},
+			wantErr:  true,
 		},
 		{
-			desc: "First query returns error",
-			api:  API{APIToken: Token{Token: "test", Expires: time.Now().Add(time.Second * 100)}},
-			getRes: func(string) (*APIResponse, error) {
-				return nil, errors.New("error")
+			desc:     "error 500",
+			handlers: []http.HandlerFunc{error500},
+			wantErr:  true,
+		},
+		{
+			desc: "too many requests then 500",
+			handlers: []http.HandlerFunc{
+				errorTooMany,
+				error500,
 			},
-			renewToken: func() (Token, error) {
-				return Token{}, nil
-			},
-			want:    TorrentResults{},
 			wantErr: true,
 		},
 		{
-			desc: "Got expired token response, second query OK",
-			api:  API{APIToken: Token{Token: "test", Expires: time.Now().Add(time.Second * 100)}},
-			getRes: func(string) (*APIResponse, error) {
-				if nrOfErrors == 0 {
-					nrOfErrors++
-					return &APIResponse{Torrents: nil, Error: "error", ErrorCode: 4}, nil
-				}
-				return &APIResponse{Torrents: []byte("[]")}, nil
+			desc: "token expired, then 500",
+			handlers: []http.HandlerFunc{
+				errorTokenExpired,
+				error500,
 			},
-			renewToken: func() (Token, error) {
-				return Token{}, nil
-			},
-			want:    TorrentResults{},
-			wantErr: false,
-		},
-		{
-			desc: "Got expired token response, second query error",
-			api:  API{APIToken: Token{Token: "test", Expires: time.Now().Add(time.Second * 100)}},
-			getRes: func(string) (*APIResponse, error) {
-				if nrOfErrors == 0 {
-					nrOfErrors++
-					return &APIResponse{Torrents: nil, Error: "error", ErrorCode: 4}, nil
-				}
-				return &APIResponse{Torrents: []byte("[]")}, errors.New("test")
-			},
-			renewToken: func() (Token, error) {
-				return Token{}, nil
-			},
-			want:    TorrentResults{},
 			wantErr: true,
 		},
 		{
-			desc: "Token invalid, renew returns error",
-			api:  API{APIToken: Token{}},
-			getRes: func(string) (*APIResponse, error) {
-				return nil, nil
+			desc: "token expired, then no results",
+			handlers: []http.HandlerFunc{
+				errorTokenExpired,
+				fakeTokenHandler,
+				errorNoResults,
 			},
-			renewToken: func() (Token, error) {
-				return Token{}, errors.New("token error")
-			},
-			want:    TorrentResults{},
-			wantErr: true,
 		},
 		{
-			desc: "Got error in first response",
-			api:  API{APIToken: Token{Token: "test", Expires: time.Now().Add(time.Second * 100)}},
-			getRes: func(string) (*APIResponse, error) {
-				return &APIResponse{Torrents: nil, Error: "error", ErrorCode: 5}, nil
+			desc: "too many requests then OK",
+			handlers: []http.HandlerFunc{
+				errorTooMany,
+				okResponse,
 			},
-			renewToken: func() (Token, error) {
-				return Token{}, nil
-			},
-			want:    TorrentResults{},
-			wantErr: true,
+			want: TorrentResults{{Title: "Movie"}},
 		},
 		{
-			desc: "First reponse renew token,  error in second response",
-			api:  API{APIToken: Token{Token: "test", Expires: time.Now().Add(time.Second * 100)}},
-			getRes: func(string) (*APIResponse, error) {
-				if nrOfErrors == 0 {
-					nrOfErrors++
-					return &APIResponse{Torrents: nil, Error: "error", ErrorCode: 4}, nil
-				}
-				return &APIResponse{Torrents: nil, Error: "error", ErrorCode: 5}, nil
+			desc: "token expired then OK",
+			handlers: []http.HandlerFunc{
+				errorTokenExpired,
+				fakeTokenHandler,
+				okResponse,
 			},
-			renewToken: func() (Token, error) {
-				return Token{}, nil
-			},
-			want:    TorrentResults{},
-			wantErr: true,
+			want: TorrentResults{{Title: "Movie"}},
 		},
 		{
-			desc: "First reponse renew token,  error in renew",
-			api:  API{APIToken: Token{Token: "test", Expires: time.Now().Add(time.Second * 100)}},
-			getRes: func(string) (*APIResponse, error) {
-				return &APIResponse{Torrents: nil, Error: "error", ErrorCode: 4}, nil
+			desc: "token expired then too many then OK",
+			handlers: []http.HandlerFunc{
+				errorTokenExpired,
+				errorTooMany,
+				fakeTokenHandler,
+				errorTooMany,
+				okResponse,
 			},
-			renewToken: func() (Token, error) {
-				return Token{}, errors.New("error")
-			},
-			want:    TorrentResults{},
-			wantErr: true,
+			want: TorrentResults{{Title: "Movie"}},
 		},
 		{
-			desc: "Error in unmarshal",
-			api:  API{APIToken: Token{Token: "test", Expires: time.Now().Add(time.Second * 100)}},
-			getRes: func(string) (*APIResponse, error) {
-				return &APIResponse{Torrents: []byte("")}, nil
+			desc: "OK",
+			handlers: []http.HandlerFunc{
+				okResponse,
 			},
-			renewToken: func() (Token, error) {
-				return Token{}, nil
-			},
-			want:    TorrentResults{},
-			wantErr: true,
-		},
-		{
-			desc: "No torrents found",
-			api:  API{APIToken: Token{Token: "test", Expires: time.Now().Add(time.Second * 100)}},
-			getRes: func(string) (*APIResponse, error) {
-				return &APIResponse{Torrents: nil, Error: "error", ErrorCode: 20}, nil
-			},
-			renewToken: func() (Token, error) {
-				return Token{}, nil
-			},
-			want:    nil,
-			wantErr: false,
+			want: TorrentResults{{Title: "Movie"}},
 		},
 	}
-
+	fh := &fakeHandler{handlers: []http.HandlerFunc{fakeTokenHandler}}
+	ts := httptest.NewServer(fh)
+	defer ts.Close()
 	for i, tc := range testData {
-		nrOfErrors = 0
-		getRes = tc.getRes
-		renewToken = tc.renewToken
-		got, err := tc.api.call()
-
-		if (err == nil) != !tc.wantErr {
-			t.Errorf("Test (%d) %s: API.call() %+v => got unexpected error %v", i, tc.desc, tc.api, err)
-		}
-		if err != nil {
-			continue
-		}
-		fmt.Println(got == nil)
-		if !reflect.DeepEqual(got, tc.want) {
-			t.Errorf("Test(%d) %s: API.call() %+v => got: %+v, want: %+v", i, tc.desc, tc.api, got, tc.want)
-		}
-
+		t.Run(fmt.Sprintf("Test (%d) %s", i, tc.desc), func(t *testing.T) {
+			// insert token first to the handlers as New always fetches the token.
+			fh.setHandlers(append([]http.HandlerFunc{fakeTokenHandler}, tc.handlers...))
+			a, err := New("test", APIURL(ts.URL), RequestDelay(0))
+			if err != nil {
+				t.Fatalf("Failed to start API: %v", err)
+			}
+			got, err := a.call()
+			if (err != nil) != tc.wantErr {
+				t.Errorf("unexpected error got (%v) want (%v)", err, tc.wantErr)
+			}
+			if err != nil {
+				return
+			}
+			if diff := pretty.Compare(tc.want, got); diff != "" {
+				t.Errorf("unexpected results: diff -want +got\n%s", diff)
+			}
+		})
 	}
 }
